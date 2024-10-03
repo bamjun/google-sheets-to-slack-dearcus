@@ -277,51 +277,6 @@ function sendDailyMessage() {
   sendToSlack(message);
 }
 
-// 사용자 ID 매핑 함수
-function getUserIdMapping() {
-  var scriptProperties = PropertiesService.getScriptProperties();
-  var token = scriptProperties.getProperty('OAuthToken');
-  
-  if (!token) {
-    throw new Error('OAuth 토큰이 설정되어 있지 않습니다. 스크립트 속성에 OAuthToken을 설정하세요.');
-  }
-  
-  var url = 'https://slack.com/api/users.list';
-  var options = {
-    method: 'get',
-    headers: {
-      'Authorization': 'Bearer ' + token
-    },
-    muteHttpExceptions: true
-  };
-  
-  var response = UrlFetchApp.fetch(url, options);
-  var result = JSON.parse(response.getContentText());
-  
-  if (!result.ok) {
-    throw new Error('슬랙 API 호출 오류: ' + result.error);
-  }
-  
-  var members = result.members;
-  var mapping = {};
-  
-  for (var i = 0; i < members.length; i++) {
-    var member = members[i];
-    if (member.deleted || member.is_bot) {
-      continue; // 탈퇴한 사용자나 봇은 제외
-    }
-    var realName = member.real_name_normalized || member.real_name;
-    var displayName = member.profile.display_name_normalized || member.profile.display_name;
-    var userId = member.id;
-    
-    // 필요에 따라 realName, displayName 등을 조합하여 매핑
-    mapping[realName] = userId;
-    mapping[displayName] = userId;
-  }
-  
-  return mapping;
-}
-
 // 사용자 멘션 생성 함수
 function getUserMentions(personStr, userIdMapping) {
   var names = personStr.split(",").map(function(name) {
