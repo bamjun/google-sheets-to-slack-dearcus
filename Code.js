@@ -2,6 +2,10 @@
 // sendMondayMessage() - 매일 8~9시
 //sendDailyMessage() - 매일 8~9시
 
+// 파일 최상단에 추가
+const IS_DEV_MODE = true; // 개발 모드 여부
+const DEV_TEST_DATE = '2024-09-30'; // 테스트용 날짜
+
 function sendMondayMessage() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheets()[0]; // 첫 번째 시트를 가져옵니다
@@ -11,9 +15,8 @@ function sendMondayMessage() {
   var headers = data[0];
   var rows = data.slice(1);
 
-  // dev 바꾸기 var today = new Date();
-  // var today = new Date('2024-09-02');
-  var today = new Date();
+  // 날짜 처리 로직 개선
+  var today = IS_DEV_MODE ? new Date(DEV_TEST_DATE) : new Date();
   if (today.getDay() !== 1) {
     // 오늘이 월요일이 아니면 종료
     return;
@@ -58,11 +61,18 @@ function sendMondayMessage() {
     }
   }
 
-  var message = "💬\n";
-  message += "디어커스 " + month + "월 " + weekNumber + "주차 일정입니다.\n";
+  var message = "💬";
+  if (today.getDay() === 1 && today.getDate() >= 25) {
+    var nextMonth = new Date(today);
+    nextMonth.setDate(1);
+    nextMonth.setMonth(today.getMonth() + 1);
+    message += "*디어커스 " + (nextMonth.getMonth() + 1) + "월 1주차 일정입니다.*\n\n\n";
+  } else {
+    message += "*디어커스 " + month + "월 " + weekNumber + "주차 일정입니다.*\n\n\n";
+  }
 
   // 연차/공가
-  message += "연차/공가 사용인원 : 총 " + leaveData.length + "명\n";
+  message += "*연차/공가 사용인원 : 총 " + leaveData.length + "명*\n";
   var leaveByDate = groupDataByDate(leaveData);
   for (var dateKey in leaveByDate) {
     var items = leaveByDate[dateKey];
@@ -75,7 +85,7 @@ function sendMondayMessage() {
   }
 
   // 미팅 등
-  message += "미팅, 외근, 자문 일정 : 총 " + meetingData.length + "건\n";
+  message += "\n\n*미팅, 외근, 자문 일정 : 총 " + meetingData.length + "건*\n";
   for (var i = 0; i < meetingData.length; i++) {
     var item = meetingData[i];
     var userMentions = getUserMentions(item.person, userIdMapping);
@@ -83,41 +93,52 @@ function sendMondayMessage() {
     message += formatDateAndTime(item.dateInfo.startDate) + "\n";
   }
 
-  message += "\n이번주도 화이팅!";
+  message += "\n\n이번주도 화이팅!";
 
   sendToSlack(message);
 }
 
 function getWeekNumber(date) {
-  // 해당 월의 첫 번째 월요일을 찾습니다.
+  // 다음 달의 첫 주차인지 확인
+  var lastDayOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  var daysUntilEndOfMonth = lastDayOfMonth.getDate() - date.getDate();
+  
+  if (date.getDay() === 1 && daysUntilEndOfMonth < 7) { // 월요일이고 월말이 7일 이내인 경우
+    return 1; // 다음 달의 1주차로 처리
+  }
+  
   var firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
   var firstMonday = new Date(firstDayOfMonth);
   var day = firstMonday.getDay();
-  var diff = (day === 0) ? 1 : (8 - day);
-  firstMonday.setDate(firstMonday.getDate() + diff);
-
-  // 주차 계산
-  var weekNumber = Math.floor((date - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1;
-  if (date < firstMonday) {
-    weekNumber = 1;
-  }
-
+  var diff = firstMonday.getDate() - day + (day === 0 ? -6 : 1);
+  firstMonday.setDate(diff);
+  
+  var currentMonday = new Date(date);
+  day = currentMonday.getDay();
+  diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
+  currentMonday.setDate(diff);
+  
+  var weekNumber = Math.floor((currentMonday - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  
   return weekNumber;
 }
-
 function getWeekStartDate(date) {
-  var weekNumber = getWeekNumber(date);
-  var firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-  var firstMonday = new Date(firstDayOfMonth);
-  var day = firstMonday.getDay();
-  var diff = (day === 0) ? 1 : (8 - day);
-  firstMonday.setDate(firstMonday.getDate() + diff);
-
-  var weekStartDate = new Date(firstMonday);
-  weekStartDate.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
-
-  return weekStartDate;
+  var month = date.getMonth();
+  var year = date.getFullYear();
+  
+  // 해당 월의 첫 번째 날짜
+  var firstDayOfMonth = new Date(year, month, 1);
+  
+  // 현재 날짜의 월요일 찾기
+  var currentMonday = new Date(date);
+  var day = currentMonday.getDay();
+  var diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
+  currentMonday.setDate(diff);
+  currentMonday.setHours(0, 0, 0, 0);
+  
+  return currentMonday;
 }
+
 
 function isDateInWeek(dateInfo, referenceDate) {
   var weekStartDate = getWeekStartDate(referenceDate);
@@ -208,9 +229,8 @@ function sendDailyMessage() {
   var headers = data[0];
   var rows = data.slice(1);
   
-  // dev var today = new Date();
-  // var today = new Date('2024-09-30');
-  var today = new Date();
+  // 날짜 처리 로직 개선
+  var today = IS_DEV_MODE ? new Date(DEV_TEST_DATE) : new Date();
   if (today.getDay() === 0 || today.getDay() === 6) {
     // 주말이면 행사/프로모션만
     var weRingTypes = [];
@@ -253,20 +273,20 @@ function sendDailyMessage() {
     }
   }
   
-  var message = "💬\n오늘의 행사 및 위링타임 일정입니다.\n";
+  var message = "*💬오늘의 행사 및 위링타임 일정입니다.*\n\n\n";
   
   if (startingPromotions.length > 0) {
-    message += "오늘 시작하는 프로모션 : 총 " + startingPromotions.length + "건\n";
+    message += "*오늘 시작하는 프로모션 : 총 " + startingPromotions.length + "건*\n";
     message += startingPromotions.join("\n") + "\n";
   }
   
   if (endingPromotions.length > 0) {
-    message += "오늘 끝나는 프로모션 : 총 " + endingPromotions.length + "건\n";
+    message += "\n\n*오늘 끝나는 프로모션 : 총 " + endingPromotions.length + "건*\n";
     message += endingPromotions.join("\n") + "\n";
   }
   
   if (weRingData.length > 0) {
-    message += "오늘 진행 위링타임\n";
+    message += "\n\n*오늘 진행 위링타임*\n";
     for (var i = 0; i < weRingData.length; i++) {
       var item = weRingData[i];
       var userMentions = getUserMentions(item.person, userIdMapping);
@@ -274,7 +294,7 @@ function sendDailyMessage() {
     }
   }
   
-  sendToSlack(message);
+  sendToSlackForPromotion(message);
 }
 
 // 사용자 멘션 생성 함수
@@ -333,11 +353,40 @@ function groupDataByDate(dataArray) {
 
 
 function sendToSlack(message) {
-  // dev 로그지우기
-  // Logger.log(message)  // 테스트용 실제 사용할때 지워야함
-  // return ;  // 테스트용 실제 사용할때 지워야함
+  if (IS_DEV_MODE) {
+    Logger.log('DEV MODE - Message:');
+    Logger.log(message);
+    return;
+  }
+  
   var scriptProperties = PropertiesService.getScriptProperties();
   var url = scriptProperties.getProperty('SlackWebhookId'); // 슬랙 웹훅 URL을 입력하세요
+  var payload = {
+    text: message,
+    unfurl_links: false, // 링크 미리보기 비활성화
+    unfurl_media: false  // 미디어 미리보기 비활성화
+  };
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload)
+  };
+  
+  try {
+    UrlFetchApp.fetch(url, options);
+  } catch (error) {
+    Logger.log('Slack 메시지 전송 실패: ' + error.toString());
+  }
+}
+
+function sendToSlackForPromotion(message) {
+  if (IS_DEV_MODE) {
+    Logger.log('DEV MODE - Message:');
+    Logger.log(message);
+    return;
+  }
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var url = scriptProperties.getProperty('SlackWebhookIdForPromotion'); // 슬랙 웹훅 URL을 입력하세요
   var payload = {
     text: message
   };
@@ -348,6 +397,8 @@ function sendToSlack(message) {
   };
   UrlFetchApp.fetch(url, options);
 }
+
+
 
 
 
@@ -424,3 +475,5 @@ function getUserIdMapping() {
   }
   return mapping;
 }
+
+
